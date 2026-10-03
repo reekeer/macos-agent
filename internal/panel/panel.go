@@ -103,7 +103,10 @@ func (c *Client) post(ctx context.Context, path string, in, out any) error {
 		return err
 	}
 	defer res.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	raw, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	if err != nil {
+		return fmt.Errorf("panel %s: %w", path, err)
+	}
 	if res.StatusCode >= 300 {
 		var detail struct {
 			Detail string `json:"detail"`
@@ -115,6 +118,9 @@ func (c *Client) post(ctx context.Context, path string, in, out any) error {
 	}
 	if out == nil {
 		return nil
+	}
+	if len(raw) == 0 {
+		return fmt.Errorf("panel %s: empty response", path)
 	}
 	return json.Unmarshal(raw, out)
 }

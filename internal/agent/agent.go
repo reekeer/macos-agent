@@ -323,6 +323,12 @@ func (a *Agent) busy() bool {
 	return false
 }
 
+func (a *Agent) isPulling() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.pulling
+}
+
 func (a *Agent) activeVMs() map[string]bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -354,7 +360,7 @@ func (a *Agent) housekeeping(ctx context.Context) {
 			}
 		}
 		a.clean(ctx)
-		if a.version != "dev" && time.Since(lastUpdate) > updateEvery && !a.busy() {
+		if a.version != "dev" && time.Since(lastUpdate) > updateEvery && !a.busy() && !a.isPulling() {
 			lastUpdate = time.Now()
 			a.selfUpdate(ctx)
 		}
