@@ -71,18 +71,29 @@ type Jit struct {
 }
 
 type Client struct {
-	base  string
-	token string
-	http  *http.Client
-	agent string
+	base      string
+	token     string
+	http      *http.Client
+	transport *http.Transport
+	agent     string
 }
 
 func New(base, token, version string) *Client {
+	transport := &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		ForceAttemptHTTP2:     true,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 15 * time.Second,
+		IdleConnTimeout:       60 * time.Second,
+		MaxIdleConnsPerHost:   2,
+		HTTP2:                 &http.HTTP2Config{SendPingTimeout: 10 * time.Second, PingTimeout: 5 * time.Second},
+	}
 	return &Client{
-		base:  strings.TrimRight(base, "/"),
-		token: token,
-		http:  &http.Client{Timeout: 20 * time.Second},
-		agent: "reekeer-agent/" + version,
+		base:      strings.TrimRight(base, "/"),
+		token:     token,
+		transport: transport,
+		http:      &http.Client{Timeout: 20 * time.Second, Transport: transport},
+		agent:     "reekeer-agent/" + version,
 	}
 }
 
@@ -100,11 +111,13 @@ func (c *Client) post(ctx context.Context, path string, in, out any) error {
 	req.Header.Set("User-Agent", c.agent)
 	res, err := c.http.Do(req)
 	if err != nil {
+		c.transport.CloseIdleConnections()
 		return err
 	}
 	defer res.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
 	if err != nil {
+		c.transport.CloseIdleConnections()
 		return fmt.Errorf("panel %s: %w", path, err)
 	}
 	if res.StatusCode >= 300 {
@@ -127,16 +140,16 @@ func (c *Client) post(ctx context.Context, path string, in, out any) error {
 
 func (c *Client) Sync(ctx context.Context, r Report) (Plan, error) {
 	var p Plan
-	err := c.post(ctx, "/api/agent/sync", r, &p)
+	err := c.post(ctx, "/agent/sync", r, &p)
 	return p, err
 }
 
 func (c *Client) JIT(ctx context.Context, pool, vm string) (Jit, error) {
 	var j Jit
-	err := c.post(ctx, "/api/agent/jit", map[string]string{"pool": pool, "vm": vm}, &j)
+	err := c.post(ctx, "/agent/jit", map[string]string{"pool": pool, "vm": vm}, &j)
 	return j, err
 }
 
 func (c *Client) Release(ctx context.Context, pool, name string) error {
-	return c.post(ctx, "/api/agent/release", map[string]string{"pool": pool, "name": name}, nil)
+	return c.post(ctx, "/agent/release", map[string]string{"pool": pool, "name": name}, nil)
 }
